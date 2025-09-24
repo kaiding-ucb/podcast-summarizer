@@ -15,7 +15,7 @@
             class="btn btn-primary" 
             onclick="discoverVideos()"
         >
-            🚀 Discover New Videos (Last 7 Days)
+            🚀 Discover New Videos (Last {{ discovery_days_back }} Days)
         </button>
 
         <button 
@@ -56,8 +56,11 @@
 </div>
 
 <script>
+// Get discovery_days_back from template
+const DISCOVERY_DAYS_BACK = {{ discovery_days_back }};
+
 // Discover videos from last N days
-async function discoverVideos(days = 7) {
+async function discoverVideos(days = DISCOVERY_DAYS_BACK) {
     const loading = document.getElementById('discovery-loading');
     const loadingMessage = document.getElementById('loading-message');
     
@@ -82,7 +85,7 @@ async function analyzeAllVideos() {
     const progressText = document.getElementById('progress-text');
     const progressFill = document.getElementById('progress-fill');
     
-    if (!confirm('This will analyze all new videos from the last 7 days. This may take several minutes. Continue?')) {
+    if (!confirm(`This will analyze all new videos from the last ${DISCOVERY_DAYS_BACK} days. This may take several minutes. Continue?`)) {
         return;
     }
     
@@ -95,7 +98,7 @@ async function analyzeAllVideos() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ days_back: 7 })
+            body: JSON.stringify({ days_back: DISCOVERY_DAYS_BACK })
         });
         
         const result = await response.json();
@@ -106,7 +109,7 @@ async function analyzeAllVideos() {
             progressText.textContent = `Analyzed ${result.analyzed} of ${result.total_videos} videos (${result.failed} failed)`;
             
             // Refresh the grid to show updated status
-            await discoverVideos(7);
+            await discoverVideos(DISCOVERY_DAYS_BACK);
             
             alert(`Batch analysis complete!\n\nAnalyzed: ${result.analyzed}\nFailed: ${result.failed}\nTotal: ${result.total_videos}`);
         } else {

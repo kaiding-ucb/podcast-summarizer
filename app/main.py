@@ -30,7 +30,11 @@ async def home():
 @app.get("/discover", response_class=HTMLResponse)
 async def discovery_page(request: Request):
     """Discovery page showing videos from trusted channels"""
-    return templates.TemplateResponse("discover.html", {"request": request})
+    import yaml
+    with open("config.yaml", 'r') as file:
+        config = yaml.safe_load(file)
+    discovery_days_back = config.get('discovery_days_back', 7)
+    return templates.TemplateResponse("discover.html", {"request": request, "discovery_days_back": discovery_days_back})
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
@@ -41,6 +45,7 @@ async def dashboard_page(request: Request):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "podcast-summarizer"}
+
 
 if __name__ == "__main__":
     import uvicorn
