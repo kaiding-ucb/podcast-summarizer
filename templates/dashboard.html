@@ -102,6 +102,7 @@ function renderAnalysesGrid(analyses) {
                     <div class="analysis-meta">
                         <span class="channel-badge">📺 ${analysis.channel_name || 'Unknown'}</span>
                         <span class="date-badge">📅 ${formatDate(analysis.published_at)}</span>
+                        <span class="duration-badge">⏱️ ${formatDuration(analysis.video_duration)}</span>
                     </div>
                     ${hasRecommendation ? `<div class="recommendation-badge">${recommendationType}</div>` : ''}
                 </div>
@@ -202,6 +203,20 @@ function formatDate(dateStr) {
     if (!dateStr) return 'Unknown';
     return new Date(dateStr).toLocaleDateString();
 }
+
+function formatDuration(seconds) {
+    if (!seconds) return 'Unknown';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    } else {
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
+}
 </script>
 
 <style>
@@ -267,7 +282,7 @@ function formatDate(dateStr) {
     margin-bottom: 0.5rem;
 }
 
-.channel-badge, .date-badge {
+.channel-badge, .date-badge, .duration-badge {
     font-size: 0.9rem;
     color: #666;
 }

@@ -62,14 +62,17 @@ class DatabaseService:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
                     INSERT OR REPLACE INTO video_analyses 
-                    (video_id, video_url, title, analysis, video_duration, 
-                     timestamps_valid, vaneck_excluded, success, error, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (video_id, video_url, title, analysis, channel_id, channel_name, published_at,
+                     video_duration, timestamps_valid, vaneck_excluded, success, error, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     analysis_data['video_id'],
                     analysis_data['video_url'],
                     analysis_data['title'],
                     analysis_data['analysis'],
+                    analysis_data.get('channel_id'),
+                    analysis_data.get('channel_name'),
+                    analysis_data.get('published_at'),
                     analysis_data.get('video_duration', 0),
                     analysis_data.get('timestamps_valid', False),
                     analysis_data.get('vaneck_excluded', False),
