@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from app.routers import analysis, discovery
@@ -22,10 +22,10 @@ app.include_router(analysis.router)
 app.include_router(discovery.router)
 
 # Frontend routes
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """Home page with video analysis interface"""
-    return templates.TemplateResponse("index.html", {"request": request})
+@app.get("/")
+async def home():
+    """Redirect home to discover page"""
+    return RedirectResponse(url="/discover", status_code=302)
 
 @app.get("/discover", response_class=HTMLResponse)
 async def discovery_page(request: Request):

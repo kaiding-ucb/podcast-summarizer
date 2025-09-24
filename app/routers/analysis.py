@@ -51,6 +51,9 @@ async def analyze_video(request: VideoAnalysisRequest):
         # Save to database
         db_service.save_analysis(analysis_data)
         
+        # Mark video as analyzed in discovered_videos table
+        db_service.mark_video_analyzed(video_id)
+        
         return VideoAnalysisResponse(**analysis_data)
         
     except Exception as e:

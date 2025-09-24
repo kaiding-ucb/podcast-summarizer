@@ -149,11 +149,11 @@ function renderVideoGrid(videos) {
             '<span class="not-analyzed-badge">⏳ Not Analyzed</span>';
         
         return `
-        <div class="video-card ${analyzedClass}">
+        <div class="video-card ${analyzedClass}" id="video-card-${video.video_id}">
             <div class="video-thumbnail">
                 <img src="https://img.youtube.com/vi/${video.video_id}/hqdefault.jpg" alt="${video.title}">
                 <div class="video-duration">${formatDuration(video.duration)}</div>
-                ${analyzedBadge}
+                <div id="badge-${video.video_id}">${analyzedBadge}</div>
             </div>
             <div class="video-info">
                 <h3 class="video-title">${video.title}</h3>
@@ -168,8 +168,9 @@ function renderVideoGrid(videos) {
                             📊 View Analysis
                         </a>` :
                         `<button 
+                            id="analyze-btn-${video.video_id}"
                             class="btn btn-sm btn-primary" 
-                            onclick="analyzeVideo('${video.url}')"
+                            onclick="analyzeVideoDirectly('${video.url}', '${video.video_id}')"
                         >
                             🔍 Analyze
                         </button>`
@@ -192,9 +193,55 @@ function formatDate(dateStr) {
     return new Date(dateStr).toLocaleDateString();
 }
 
-function analyzeVideo(url) {
-    // Redirect to home page with URL pre-filled
-    window.location.href = `/?video_url=${encodeURIComponent(url)}`;
+async function analyzeVideoDirectly(url, videoId) {
+    const button = document.getElementById(`analyze-btn-${videoId}`);
+    const badge = document.getElementById(`badge-${videoId}`);
+    const card = document.getElementById(`video-card-${videoId}`);
+    const originalText = button.innerHTML;
+    
+    // Show processing state
+    button.innerHTML = '⏳ Analyzing...';
+    button.disabled = true;
+    badge.innerHTML = '<span class="processing-badge">🔄 Processing</span>';
+    
+    try {
+        const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ video_url: url })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Show success state
+            button.innerHTML = '✅ Analyzed!';
+            badge.innerHTML = '<span class="analyzed-badge">✅ Analyzed</span>';
+            card.className = 'video-card analyzed';
+            
+            // Replace analyze button with view analysis button
+            setTimeout(() => {
+                button.outerHTML = `<a href="/dashboard" class="btn btn-sm btn-secondary">📊 View Analysis</a>`;
+            }, 1500);
+            
+        } else {
+            throw new Error('Analysis failed');
+        }
+        
+    } catch (error) {
+        console.error('Error analyzing video:', error);
+        
+        // Show error state and restore
+        button.innerHTML = '❌ Failed';
+        badge.innerHTML = '<span class="not-analyzed-badge">⏳ Not Analyzed</span>';
+        
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+        }, 2000);
+    }
 }
 </script>
 
@@ -221,7 +268,7 @@ function analyzeVideo(url) {
     transition: width 0.3s ease;
 }
 
-.analyzed-badge, .not-analyzed-badge {
+.analyzed-badge, .not-analyzed-badge, .processing-badge {
     position: absolute;
     top: 8px;
     left: 8px;
@@ -239,6 +286,23 @@ function analyzeVideo(url) {
 .not-analyzed-badge {
     background: rgba(255, 152, 0, 0.9);
     color: white;
+}
+
+.processing-badge {
+    background: rgba(33, 150, 243, 0.9);
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .video-card.analyzed {
