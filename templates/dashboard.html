@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Podcast Summarizer{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="hero-section">
+        <h2>📊 Analysis Dashboard</h2>
+        <p>View all analyzed videos from your trusted channels</p>
+    </div>
+
+    <div class="dashboard-controls">
+        <div class="filter-section">
+            <select id="channelFilter" class="filter-select">
+                <option value="">All Channels</option>
+                <option value="UCkrwgzhIBKccuDsi_SvZtnQ">Forward Guidance</option>
+                <option value="UC1E1SVcVyU3ntWMSQEp38Yw">Prof G Markets</option>
+            </select>
+            
+            <select id="daysFilter" class="filter-select">
+                <option value="7">Last 7 days</option>
+                <option value="14">Last 14 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="all">All time</option>
+            </select>
+            
+            <button 
+                id="refreshBtn"
+                class="btn btn-secondary" 
+                onclick="loadAnalyses()"
+            >
+                🔄 Refresh
+            </button>
+        </div>
+
+        <div id="dashboard-loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading analyses...</p>
+        </div>
+    </div>
+
+    <div id="analyses-grid" class="analyses-grid">
+        <!-- Analyses will be loaded here -->
+        <div class="empty-state">
+            <p>Loading analyses...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load analyses on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadAnalyses();
+});
+
+async function loadAnalyses() {
+    const channelFilter = document.getElementById('channelFilter').value;
+    const daysFilter = document.getElementById('daysFilter').value;
+    const loading = document.getElementById('dashboard-loading');
+    const grid = document.getElementById('analyses-grid');
+    
+    loading.style.display = 'block';
+    
+    try {
+        let url = '/api/analyses';
+        if (daysFilter !== 'all') {
+            url = `/api/analyses/recent?days=${daysFilter}`;
+        }
+        if (channelFilter) {
+            url += `${url.includes('?') ? '&' : '?'}channel_id=${channelFilter}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        renderAnalysesGrid(data.analyses);
+    } catch (error) {
+        console.error('Error loading analyses:', error);
+        grid.innerHTML = '<div class="error-state">Failed to load analyses</div>';
+    } finally {
+        loading.style.display = 'none';
+    }
+}
+
+function renderAnalysesGrid(analyses) {
+    const grid = document.getElementById('analyses-grid');
+    
+    if (!analyses || analyses.length === 0) {
+        grid.innerHTML = '<div class="empty-state"><p>No analyses found</p></div>';
+        return;
+    }
+    
+    const analysesHTML = analyses.map(analysis => {
+        const hasRecommendation = analysis.analysis.includes('**Recommendation:**') && 
+                                 !analysis.analysis.includes('**Recommendation:Other**');
+        const recommendationType = getRecommendationType(analysis.analysis);
+        
+        return `
+            <div class="analysis-card ${hasRecommendation ? 'has-recommendation' : ''}">
+                <div class="analysis-header">
+                    <h3 class="analysis-title">${analysis.title}</h3>
+                    <div class="analysis-meta">
+                        <span class="channel-badge">📺 ${analysis.channel_name || 'Unknown'}</span>
+                        <span class="date-badge">📅 ${formatDate(analysis.published_at)}</span>
+                    </div>
+                    ${hasRecommendation ? `<div class="recommendation-badge">${recommendationType}</div>` : ''}
+                </div>
+                
+                <div class="analysis-summary" id="summary-${analysis.video_id}">
+                    ${getAnalysisSummary(analysis.analysis)}
+                </div>
+                
+                <div class="analysis-full" id="full-${analysis.video_id}" style="display: none;">
+                    ${formatAnalysisText(analysis.analysis)}
+                </div>
+                
+                <div class="analysis-actions">
+                    <button 
+                        class="btn btn-sm"
+                        onclick="toggleAnalysis('${analysis.video_id}')"
+                    >
+                        <span id="toggle-text-${analysis.video_id}">📖 Show Full</span>
+                    </button>
+                    <a 
+                        href="${analysis.video_url}" 
+                        target="_blank" 
+                        class="btn btn-sm"
+                    >
+                        ▶️ Watch
+                    </a>
+                    <button 
+                        class="btn btn-sm"
+                        onclick="copyAnalysis('${analysis.video_id}')"
+                    >
+                        📋 Copy
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    grid.innerHTML = analysesHTML;
+}
+
+function getRecommendationType(analysis) {
+    if (analysis.includes('**Stock**')) return '📈 Stock';
+    if (analysis.includes('**Sector**')) return '🏭 Sector';
+    if (analysis.includes('**Portfolio strategy**') || analysis.includes('**Concentrated Portfolios**')) return '💼 Portfolio';
+    if (analysis.includes('**Own Gold**')) return '🏆 Gold';
+    return '💡 Insight';
+}
+
+function getAnalysisSummary(text) {
+    // Extract just the summary section if available
+    const summaryMatch = text.match(/\*\*Summary:\*\*(.*?)(?=\*\*|$)/s);
+    if (summaryMatch) {
+        const summary = summaryMatch[1].trim().substring(0, 300);
+        return formatAnalysisText(summary + '...');
+    }
+    return formatAnalysisText(text.substring(0, 300) + '...');
+}
+
+function formatAnalysisText(text) {
+    return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>')
+        .replace(/\((\d+:\d+)\)/g, '<span class="timestamp">($1)</span>');
+}
+
+function toggleAnalysis(videoId) {
+    const summary = document.getElementById(`summary-${videoId}`);
+    const full = document.getElementById(`full-${videoId}`);
+    const toggleText = document.getElementById(`toggle-text-${videoId}`);
+    
+    if (full.style.display === 'none') {
+        summary.style.display = 'none';
+        full.style.display = 'block';
+        toggleText.textContent = '📕 Show Less';
+    } else {
+        summary.style.display = 'block';
+        full.style.display = 'none';
+        toggleText.textContent = '📖 Show Full';
+    }
+}
+
+function copyAnalysis(videoId) {
+    const full = document.querySelector(`#full-${videoId}`);
+    const summary = document.querySelector(`#summary-${videoId}`);
+    const content = full.style.display !== 'none' ? full : summary;
+    
+    const text = content.innerText || content.textContent;
+    
+    navigator.clipboard.writeText(text).then(function() {
+        alert('Analysis copied to clipboard!');
+    }).catch(function(err) {
+        console.error('Could not copy text: ', err);
+    });
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return 'Unknown';
+    return new Date(dateStr).toLocaleDateString();
+}
+</script>
+
+<style>
+.dashboard-controls {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+}
+
+.filter-section {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-select {
+    padding: 0.5rem 1rem;
+    border: 2px solid #e1e5e9;
+    border-radius: 8px;
+    font-size: 1rem;
+    min-width: 150px;
+}
+
+.analyses-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+}
+
+.analysis-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    transition: transform 0.3s;
+}
+
+.analysis-card:hover {
+    transform: translateY(-2px);
+}
+
+.analysis-card.has-recommendation {
+    border-left: 4px solid #667eea;
+}
+
+.analysis-header {
+    margin-bottom: 1rem;
+    position: relative;
+}
+
+.analysis-title {
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.analysis-meta {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.channel-badge, .date-badge {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.recommendation-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.analysis-summary, .analysis-full {
+    line-height: 1.6;
+    color: #444;
+    margin-bottom: 1rem;
+}
+
+.analysis-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.timestamp {
+    background: #f0f0f0;
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+@media (min-width: 768px) {
+    .analyses-grid {
+        grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+    }
+}
+</style>
+{% endblock %}

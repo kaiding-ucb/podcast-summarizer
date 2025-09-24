@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Discover Videos - Podcast Summarizer{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="hero-section">
+        <h2>🔍 Discover New Videos</h2>
+        <p>Find the latest videos from your trusted finance channels</p>
+    </div>
+
+    <div class="discovery-controls">
+        <button 
+            id="discoverBtn"
+            class="btn btn-primary" 
+            onclick="discoverVideos()"
+        >
+            🚀 Discover New Videos (Last 7 Days)
+        </button>
+
+        <button 
+            id="analyzeAllBtn"
+            class="btn btn-primary"
+            onclick="analyzeAllVideos()"
+        >
+            🔍 Analyze All New Episodes
+        </button>
+
+        <button 
+            class="btn btn-secondary" 
+            hx-get="/api/recent" 
+            hx-target="#video-grid"
+        >
+            📚 Show Recent
+        </button>
+
+        <div id="discovery-loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p id="loading-message">Discovering videos...</p>
+        </div>
+        
+        <div id="batch-progress" class="batch-progress" style="display: none;">
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <p id="progress-text">Analyzing videos...</p>
+        </div>
+    </div>
+
+    <div id="video-grid" class="video-grid">
+        <!-- Videos will be loaded here -->
+        <div class="empty-state">
+            <p>👆 Click "Discover New Videos" to find the latest content from trusted channels</p>
+        </div>
+    </div>
+</div>
+
+<script>
+// Discover videos from last N days
+async function discoverVideos(days = 7) {
+    const loading = document.getElementById('discovery-loading');
+    const loadingMessage = document.getElementById('loading-message');
+    
+    loading.style.display = 'block';
+    loadingMessage.textContent = `Discovering videos from last ${days} days...`;
+    
+    try {
+        const response = await fetch(`/api/discover?days_back=${days}`);
+        const data = await response.json();
+        renderVideoGrid(data.videos);
+    } catch (error) {
+        console.error('Error discovering videos:', error);
+        alert('Failed to discover videos');
+    } finally {
+        loading.style.display = 'none';
+    }
+}
+
+// Analyze all new episodes
+async function analyzeAllVideos() {
+    const batchProgress = document.getElementById('batch-progress');
+    const progressText = document.getElementById('progress-text');
+    const progressFill = document.getElementById('progress-fill');
+    
+    if (!confirm('This will analyze all new videos from the last 7 days. This may take several minutes. Continue?')) {
+        return;
+    }
+    
+    batchProgress.style.display = 'block';
+    progressText.textContent = 'Starting batch analysis...';
+    
+    try {
+        const response = await fetch('/api/batch-analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ days_back: 7 })
+        });
+        
+        const result = await response.json();
+        
+        if (result.total_videos > 0) {
+            const percentage = ((result.analyzed / result.total_videos) * 100).toFixed(0);
+            progressFill.style.width = `${percentage}%`;
+            progressText.textContent = `Analyzed ${result.analyzed} of ${result.total_videos} videos (${result.failed} failed)`;
+            
+            // Refresh the grid to show updated status
+            await discoverVideos(7);
+            
+            alert(`Batch analysis complete!\n\nAnalyzed: ${result.analyzed}\nFailed: ${result.failed}\nTotal: ${result.total_videos}`);
+        } else {
+            progressText.textContent = 'No new videos found to analyze';
+        }
+        
+    } catch (error) {
+        console.error('Error in batch analysis:', error);
+        alert('Batch analysis failed');
+    } finally {
+        setTimeout(() => {
+            batchProgress.style.display = 'none';
+        }, 3000);
+    }
+}
+
+// Custom HTMX response handler for video discovery
+document.body.addEventListener('htmx:afterRequest', function(event) {
+    if (event.detail.xhr.responseURL.includes('/api/recent')) {
+        try {
+            const data = JSON.parse(event.detail.xhr.responseText);
+            renderVideoGrid(data.videos);
+        } catch (e) {
+            console.error('Error parsing response:', e);
+        }
+    }
+});
+
+function renderVideoGrid(videos) {
+    const grid = document.getElementById('video-grid');
+    if (!videos || videos.length === 0) {
+        grid.innerHTML = '<div class="empty-state"><p>No videos found</p></div>';
+        return;
+    }
+
+    const videosHTML = videos.map(video => {
+        const analyzedClass = video.analyzed ? 'analyzed' : 'not-analyzed';
+        const analyzedBadge = video.analyzed ? 
+            '<span class="analyzed-badge">✅ Analyzed</span>' : 
+            '<span class="not-analyzed-badge">⏳ Not Analyzed</span>';
+        
+        return `
+        <div class="video-card ${analyzedClass}">
+            <div class="video-thumbnail">
+                <img src="https://img.youtube.com/vi/${video.video_id}/hqdefault.jpg" alt="${video.title}">
+                <div class="video-duration">${formatDuration(video.duration)}</div>
+                ${analyzedBadge}
+            </div>
+            <div class="video-info">
+                <h3 class="video-title">${video.title}</h3>
+                <p class="video-channel">📺 ${video.channel_name}</p>
+                <p class="video-date">📅 ${formatDate(video.published_at)}</p>
+                <div class="video-actions">
+                    <a href="${video.url}" target="_blank" class="btn btn-sm">
+                        ▶️ Watch
+                    </a>
+                    ${video.analyzed ? 
+                        `<a href="/dashboard" class="btn btn-sm btn-secondary">
+                            📊 View Analysis
+                        </a>` :
+                        `<button 
+                            class="btn btn-sm btn-primary" 
+                            onclick="analyzeVideo('${video.url}')"
+                        >
+                            🔍 Analyze
+                        </button>`
+                    }
+                </div>
+            </div>
+        </div>
+    `}).join('');
+
+    grid.innerHTML = videosHTML;
+}
+
+function formatDuration(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function formatDate(dateStr) {
+    return new Date(dateStr).toLocaleDateString();
+}
+
+function analyzeVideo(url) {
+    // Redirect to home page with URL pre-filled
+    window.location.href = `/?video_url=${encodeURIComponent(url)}`;
+}
+</script>
+
+<style>
+.batch-progress {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: #e0e0e0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: width 0.3s ease;
+}
+
+.analyzed-badge, .not-analyzed-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+}
+
+.analyzed-badge {
+    background: rgba(76, 175, 80, 0.9);
+    color: white;
+}
+
+.not-analyzed-badge {
+    background: rgba(255, 152, 0, 0.9);
+    color: white;
+}
+
+.video-card.analyzed {
+    border: 2px solid #4caf50;
+}
+
+.video-card.not-analyzed {
+    opacity: 0.95;
+}
+</style>
+{% endblock %}

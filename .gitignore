@@ -1,0 +1,22 @@
+# Config files (copy from .example files)
+CLAUDE.md
+config.yaml
+api_keys.json
+*.env*
+
+# Claude Code local overrides
+.claude
+.claude/local/
+.claude/sessions/
+.claude/hooks/local/
+
+# Runtime files
+*.db
+podcast_analyzer.db
+__pycache__/
+chromadb/
+.DS_Store
+data/
+*.log
+monitoring_logs/
+

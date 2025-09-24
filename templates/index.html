@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Analyze Video - Podcast Summarizer{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="hero-section">
+        <h2>🎯 AI-Powered Investment Analysis</h2>
+        <p>Analyze YouTube videos from trusted finance channels for investment recommendations</p>
+    </div>
+
+    <div class="analysis-form">
+        <form id="analyzeForm" 
+              hx-post="/api/analyze" 
+              hx-target="#results" 
+              hx-indicator="#loading"
+              hx-ext="json-enc">
+            <div class="form-group">
+                <label for="video_url">YouTube Video URL:</label>
+                <input 
+                    type="url" 
+                    id="video_url" 
+                    name="video_url" 
+                    placeholder="https://www.youtube.com/watch?v=..." 
+                    required
+                    class="form-input"
+                >
+            </div>
+            
+            <button type="submit" class="btn btn-primary">
+                🔍 Analyze Video
+            </button>
+        </form>
+
+        <div id="loading" class="loading htmx-indicator">
+            <div class="spinner"></div>
+            <p>Analyzing video... This may take a moment.</p>
+        </div>
+    </div>
+
+    <div id="results" class="results-section">
+        <!-- Analysis results will appear here -->
+    </div>
+
+    <div class="sample-videos">
+        <h3>📋 Try These Sample Videos:</h3>
+        <div class="sample-grid">
+            <button 
+                class="sample-btn" 
+                onclick="document.getElementById('video_url').value='https://www.youtube.com/watch?v=699dsom_fuM'"
+            >
+                📈 Forward Guidance Sample
+            </button>
+            <button 
+                class="sample-btn" 
+                onclick="document.getElementById('video_url').value='https://www.youtube.com/watch?v=Er6M5gQiLRo'"
+            >
+                📊 Prof G Markets Sample
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
