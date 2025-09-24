@@ -50,3 +50,12 @@ class BatchAnalysisResponse(BaseModel):
 class AnalysesResponse(BaseModel):
     analyses: List[VideoAnalysisResponse]
     total_count: int
+
+class PaginatedAnalysesResponse(BaseModel):
+    analyses: List[VideoAnalysisResponse]
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool

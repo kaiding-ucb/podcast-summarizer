@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from app.models import DiscoveryResponse, VideoInfo, BatchAnalysisRequest, BatchAnalysisResponse, AnalysesResponse, VideoAnalysisResponse
+from app.models import DiscoveryResponse, VideoInfo, BatchAnalysisRequest, BatchAnalysisResponse, AnalysesResponse, VideoAnalysisResponse, PaginatedAnalysesResponse
 from services.youtube_service import YouTubeService
 from services.database import DatabaseService
 from services.batch_analyzer import BatchAnalyzer
@@ -116,47 +116,81 @@ async def mock_batch_analyze_videos(request: BatchAnalysisRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Mock batch analysis failed: {str(e)}")
 
-@router.get("/analyses", response_model=AnalysesResponse)
-async def get_all_analyses(channel_id: str = None):
-    """Get all stored analyses, optionally filtered by channel"""
+@router.get("/analyses", response_model=PaginatedAnalysesResponse)
+async def get_all_analyses(channel_id: str = None, page: int = 1, page_size: int = 10):
+    """Get paginated analyses, optionally filtered by channel"""
     try:
         db_service = DatabaseService()
-        analyses = db_service.get_all_analyses(channel_id=channel_id)
+        
+        # Validate pagination parameters
+        page = max(1, page)  # Ensure page is at least 1
+        page_size = max(1, min(50, page_size))  # Ensure page_size is between 1 and 50
+        
+        paginated_data = db_service.get_paginated_analyses(
+            page=page, 
+            page_size=page_size, 
+            channel_id=channel_id
+        )
         
         # Convert to response format
         analysis_responses = []
-        for analysis in analyses:
+        for analysis in paginated_data['analyses']:
             # Handle datetime conversion
             if isinstance(analysis.get('created_at'), str):
                 analysis['created_at'] = datetime.fromisoformat(analysis['created_at'])
             analysis_responses.append(VideoAnalysisResponse(**analysis))
         
-        return AnalysesResponse(
+        return PaginatedAnalysesResponse(
             analyses=analysis_responses,
-            total_count=len(analysis_responses)
+            total_count=paginated_data['total_count'],
+            page=paginated_data['page'],
+            page_size=paginated_data['page_size'],
+            total_pages=paginated_data['total_pages'],
+            has_next=paginated_data['has_next'],
+            has_prev=paginated_data['has_prev']
         )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get analyses: {str(e)}")
 
-@router.get("/analyses/recent", response_model=AnalysesResponse)
-async def get_recent_analyses(days: int = 7):
-    """Get analyses from the last N days"""
+@router.get("/analyses/recent", response_model=PaginatedAnalysesResponse)
+async def get_recent_analyses(days: int = 7, page: int = 1, page_size: int = 10):
+    """Get paginated recent analyses from the last N days"""
     try:
         db_service = DatabaseService()
-        analyses = db_service.get_recent_analyses(days=days)
+        
+        # For recent analyses, we'll get all recent ones first, then paginate
+        # This is simpler than creating a separate paginated recent method
+        all_recent = db_service.get_recent_analyses(days=days)
+        
+        # Validate pagination parameters
+        page = max(1, page)
+        page_size = max(1, min(50, page_size))
+        
+        # Calculate pagination manually
+        total_count = len(all_recent)
+        total_pages = (total_count + page_size - 1) // page_size
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        
+        paginated_analyses = all_recent[start_idx:end_idx]
         
         # Convert to response format
         analysis_responses = []
-        for analysis in analyses:
+        for analysis in paginated_analyses:
             # Handle datetime conversion
             if isinstance(analysis.get('created_at'), str):
                 analysis['created_at'] = datetime.fromisoformat(analysis['created_at'])
             analysis_responses.append(VideoAnalysisResponse(**analysis))
         
-        return AnalysesResponse(
+        return PaginatedAnalysesResponse(
             analyses=analysis_responses,
-            total_count=len(analysis_responses)
+            total_count=total_count,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_prev=page > 1
         )
         
     except Exception as e:

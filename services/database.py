@@ -208,3 +208,71 @@ class DatabaseService:
         except Exception as e:
             print(f"Error retrieving analyses: {e}")
             return []
+    
+    def get_paginated_analyses(self, page: int = 1, page_size: int = 10, channel_id: str = None) -> dict:
+        """Get paginated analyses with metadata"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                # Calculate offset
+                offset = (page - 1) * page_size
+                
+                # Get total count
+                if channel_id:
+                    count_cursor = conn.execute("""
+                        SELECT COUNT(*) as total FROM video_analyses 
+                        WHERE channel_id = ?
+                    """, (channel_id,))
+                    total_count = count_cursor.fetchone()['total']
+                    
+                    # Get paginated results
+                    cursor = conn.execute("""
+                        SELECT * FROM video_analyses 
+                        WHERE channel_id = ?
+                        ORDER BY 
+                            CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                            published_at DESC
+                        LIMIT ? OFFSET ?
+                    """, (channel_id, page_size, offset))
+                else:
+                    count_cursor = conn.execute("SELECT COUNT(*) as total FROM video_analyses")
+                    total_count = count_cursor.fetchone()['total']
+                    
+                    # Get paginated results
+                    cursor = conn.execute("""
+                        SELECT * FROM video_analyses 
+                        ORDER BY 
+                            CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                            published_at DESC
+                        LIMIT ? OFFSET ?
+                    """, (page_size, offset))
+                
+                analyses = [dict(row) for row in cursor.fetchall()]
+                
+                # Calculate pagination metadata
+                total_pages = (total_count + page_size - 1) // page_size
+                has_next = page < total_pages
+                has_prev = page > 1
+                
+                return {
+                    'analyses': analyses,
+                    'total_count': total_count,
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': total_pages,
+                    'has_next': has_next,
+                    'has_prev': has_prev
+                }
+                
+        except Exception as e:
+            print(f"Error retrieving paginated analyses: {e}")
+            return {
+                'analyses': [],
+                'total_count': 0,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': 0,
+                'has_next': False,
+                'has_prev': False
+            }
