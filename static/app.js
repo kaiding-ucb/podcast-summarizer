@@ -55,6 +55,8 @@ function renderAnalysisResult(data) {
                 <h3>📊 Analysis Results</h3>
                 <div class="video-meta">
                     <p><strong>📹 Video:</strong> ${data.title}</p>
+                    <p><strong>📺 Channel:</strong> ${data.channel_name || 'Unknown'}</p>
+                    <p><strong>📅 Published:</strong> ${formatDate(data.published_at) || 'Unknown'}</p>
                     <p><strong>⏱️ Duration:</strong> ${formatDuration(data.video_duration)}</p>
                     <p><strong>✅ Timestamps Valid:</strong> ${data.timestamps_valid ? 'Yes' : 'No'}</p>
                     <p><strong>🚫 VanEck Excluded:</strong> ${data.vaneck_excluded ? 'Yes' : 'No'}</p>
@@ -103,6 +105,11 @@ function formatDuration(seconds) {
     } else {
         return `${minutes}:${secs.toString().padStart(2, '0')}`;
     }
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return 'Unknown';
+    return new Date(dateStr).toLocaleDateString();
 }
 
 function copyAnalysis() {
