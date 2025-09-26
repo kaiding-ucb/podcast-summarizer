@@ -174,18 +174,28 @@ class DatabaseService:
             print(f"Error marking video as analyzed: {e}")
             return False
     
-    def get_recent_analyses(self, days: int = 7) -> list[Dict[str, Any]]:
-        """Get analyses from the last N days"""
+    def get_recent_analyses(self, days: int = 7, channel_id: str = None) -> list[Dict[str, Any]]:
+        """Get analyses from the last N days, optionally filtered by channel"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                cursor = conn.execute("""
-                    SELECT * FROM video_analyses 
-                    WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')
-                    ORDER BY 
-                        CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
-                        published_at DESC
-                """, (days,))
+                if channel_id:
+                    cursor = conn.execute("""
+                        SELECT * FROM video_analyses 
+                        WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')
+                        AND channel_id = ?
+                        ORDER BY 
+                            CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                            published_at DESC
+                    """, (days, channel_id))
+                else:
+                    cursor = conn.execute("""
+                        SELECT * FROM video_analyses 
+                        WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')
+                        ORDER BY 
+                            CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                            published_at DESC
+                    """, (days,))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             print(f"Error retrieving recent analyses: {e}")
