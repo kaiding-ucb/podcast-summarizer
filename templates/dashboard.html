@@ -2,6 +2,118 @@
 
 {% block title %}Dashboard - Podcast Summarizer{% endblock %}
 
+{% block styles %}
+<style>
+/* Dashboard Analysis Section Styling - Embedded for immediate effect */
+.analysis-section {
+    margin: 1.2rem 0;
+    padding: 1.25rem;
+    border-left: 4px solid #e0e0e0;
+    background: #fafafa;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.analysis-section:first-child {
+    margin-top: 0.5rem;
+}
+
+.analysis-section.highlighted {
+    border-left-color: #ff6b35;
+    background: linear-gradient(135deg, #fff8f3 0%, #fafafa 100%);
+    box-shadow: 0 2px 8px rgba(255, 107, 53, 0.15);
+    position: relative;
+}
+
+.analysis-section.highlighted::before {
+    content: '⭐';
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1.1rem;
+    opacity: 0.7;
+}
+
+.section-title {
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 0.75rem;
+    font-size: 1.15rem;
+    letter-spacing: 0.025em;
+    text-transform: capitalize;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.section-title::before {
+    content: '▸';
+    color: #667eea;
+    font-weight: bold;
+    font-size: 1rem;
+}
+
+.analysis-section.highlighted .section-title {
+    color: #c0392b;
+}
+
+.analysis-section.highlighted .section-title::before {
+    color: #ff6b35;
+}
+
+.section-content {
+    color: #444;
+    line-height: 1.65;
+    font-size: 0.96rem;
+    text-align: justify;
+}
+
+/* Timestamp Links Styling */
+.timestamp-link {
+    color: #1976d2;
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px dotted #1976d2;
+    padding-bottom: 1px;
+    transition: all 0.2s ease;
+    display: inline-block;
+    margin: 0 2px;
+}
+
+.timestamp-link:hover {
+    color: #0d47a1;
+    border-bottom-style: solid;
+    background-color: rgba(25, 118, 210, 0.05);
+    border-radius: 3px;
+    padding: 0 3px;
+}
+
+.timestamp-display {
+    color: #666;
+    font-weight: 500;
+    font-family: 'Courier New', monospace;
+    background-color: rgba(0, 0, 0, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+/* Additional styling for better readability */
+.analysis-full {
+    margin-top: 1rem;
+}
+
+.analysis-full strong {
+    color: #2c3e50;
+}
+
+.analysis-full em {
+    color: #546e7a;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <div class="hero-section">
@@ -224,53 +336,165 @@ function formatAnalysisText(text, videoUrl) {
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/\n/g, '<br>')
-        // Enhanced timestamp patterns: (0:56), (0:56-1:14), (1:23:45), etc.
-        .replace(/\((\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?)\)/g, (match, timeRange) => {
-            // Extract start time from range like \"0:56-1:14\" -> \"0:56\"
-            const startTime = timeRange.split('-')[0];
-            const timestampUrl = createTimestampUrl(videoUrl, startTime);
-            return `<a href=\"${timestampUrl}\" target=\"_blank\" class=\"timestamp-link\">${match}</a>`;
+        // Enhanced timestamp patterns: (0:56), (0:56-1:14), (1:23:45), 0:56, etc.
+        .replace(/(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, (match, timeRange) => {
+            // Skip if this is part of a URL or already processed
+            if (match.includes('http') || match.includes('www')) return match;
+            
+            // Extract start time from range like "(0:56-1:14)" -> "0:56"
+            const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
+            
+            // Validate timestamp format
+            if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) return match;
+            
+            if (videoUrl) {
+                const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
+                return `<a href="${timestampUrl}" target="_blank" class="timestamp-link">${match}</a>`;
+            }
+            return `<span class="timestamp-display">${match}</span>`;
         });
 }
 
 function parseAnalysisSections(text) {
     const sections = [];
     
-    // Enhanced regex to capture more section patterns
-    const sectionPatterns = [
-        /\*\*(Summary|Recommendation|Rationale|Key Points?|Analysis Points?|Market Impact Analysis|Key Topics?|Main Points?|Key Takeaways?):\*\*(.*?)(?=\n\*\*|$)/gs,
-        /\n\n(Summary|Recommendation|Rationale|Key Points?|Analysis Points?|Market Impact Analysis|Key Topics?|Main Points?|Key Takeaways?):\n(.*?)(?=\n\n[A-Z][a-z]+:|$)/gs,
-        /(Summary|Recommendation|Rationale|Key Points?|Analysis Points?|Market Impact Analysis|Key Topics?|Main Points?|Key Takeaways?):\s*(.*?)(?=\n[A-Z][a-z]+:|$)/gs
+    // Enhanced patterns to match common analysis formats
+    const patterns = [
+        // Pattern 1: **Recommendation: Other** **Who owns the media?** (from actual data)
+        /\*\*(Recommendation):\s*([^*]+?)\*\*\s*\*\*([^*]+?)\*\*/g,
+        
+        // Pattern 2: Bullet points with bold headers: * **Summary:** content
+        /(?:^|\n)\s*\*\s+\*\*(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis|Who owns the media\?|Stock|Sector|Portfolio strategy|Concentrated Portfolios|Own Gold):\*\*\s*([\s\S]*?)(?=\n\s*\*\s+\*\*|\n\s*$|$)/g,
+        
+        // Pattern 3: Direct bold headers: **Summary:** content
+        /\*\*(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis|Stock|Sector|Portfolio strategy|Concentrated Portfolios|Own Gold):\*\*\s*([\s\S]*?)(?=\*\*[A-Z]|$)/g,
+        
+        // Pattern 4: Plain section headers without bold: Summary: content
+        /(?:^|\n)\s*(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis):\s*([\s\S]*?)(?=\n\s*(?:Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis):|$)/g
     ];
     
-    for (const regex of sectionPatterns) {
-        let match;
-        while ((match = regex.exec(text)) !== null) {
-            const [fullMatch, title, content] = match;
-            const cleanTitle = title.trim();
-            const cleanContent = content.trim();
+    for (const pattern of patterns) {
+        const matches = [...text.matchAll(pattern)];
+        if (matches.length > 0) {
+            matches.forEach(match => {
+                if (match.length === 4) {
+                    // Special case for "Recommendation: Other" **Topic** format
+                    const [, category, type, topic] = match;
+                    sections.push({
+                        title: `${category}: ${type}`,
+                        content: topic.trim(),
+                        isHighlighted: true,
+                        isRecommendation: true
+                    });
+                } else if (match.length === 3) {
+                    const [, title, content] = match;
+                    if (content && content.trim()) {
+                        sections.push({
+                            title: title.trim(),
+                            content: content.trim(),
+                            isHighlighted: ['Recommendation', 'Rationale', 'Stock', 'Sector', 'Portfolio strategy'].includes(title.trim()),
+                            isRecommendation: title.trim().toLowerCase().includes('recommendation'),
+                            isTimestamps: title.trim().toLowerCase().includes('timestamp')
+                        });
+                    }
+                }
+            });
             
-            // Avoid duplicates
-            if (!sections.find(s => s.title === cleanTitle) && cleanContent.length > 0) {
-                sections.push({
-                    title: cleanTitle,
-                    content: cleanContent,
-                    isHighlighted: ['Recommendation', 'Rationale'].includes(cleanTitle)
-                });
-            }
+            if (sections.length > 0) break; // Found sections, stop trying other patterns
         }
-        regex.lastIndex = 0; // Reset regex
     }
     
-    // If no sections found, try to split by double line breaks
+    // Enhanced fallback for bullet point sections if no structured sections found
     if (sections.length === 0) {
-        const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
+        const bulletSections = text.split(/\n\s*\*\s+/).filter(s => s.trim());
+        
+        bulletSections.forEach(section => {
+            const headerMatch = section.match(/^(.*?):\s*([\s\S]*)/);
+            
+            if (headerMatch) {
+                const [, rawTitle, content] = headerMatch;
+                // Clean up title (remove bold markers)
+                const title = rawTitle.replace(/^\*\*|\*\*$/g, '').trim();
+                
+                if (content && content.trim()) {
+                    sections.push({
+                        title: title,
+                        content: content.trim(),
+                        isHighlighted: ['Recommendation', 'Rationale', 'Stock', 'Sector', 'Portfolio strategy'].some(keyword => 
+                            title.toLowerCase().includes(keyword.toLowerCase())
+                        ),
+                        isRecommendation: title.toLowerCase().includes('recommendation'),
+                        isTimestamps: title.toLowerCase().includes('timestamp')
+                    });
+                }
+            }
+        });
+    }
+    
+    // If still no sections found, try line-based parsing for structured content
+    if (sections.length === 0) {
+        const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+        let currentSection = null;
+        let currentContent = [];
+        
+        for (const line of lines) {
+            // Check if line starts with a section header (no bold markers needed)
+            const sectionMatch = line.match(/^(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis):\s*(.*)/);
+            if (sectionMatch) {
+                // Save previous section if exists
+                if (currentSection) {
+                    sections.push({
+                        title: currentSection,
+                        content: currentContent.join(' ').trim(),
+                        isHighlighted: ['Recommendation', 'Rationale'].includes(currentSection),
+                        isRecommendation: currentSection.toLowerCase().includes('recommendation'),
+                        isTimestamps: currentSection.toLowerCase().includes('timestamp')
+                    });
+                }
+                
+                // Start new section
+                currentSection = sectionMatch[1].trim();
+                currentContent = sectionMatch[2] ? [sectionMatch[2].trim()] : [];
+            } else if (currentSection) {
+                // Add line to current section
+                currentContent.push(line);
+            }
+        }
+        
+        // Add final section
+        if (currentSection && currentContent.length > 0) {
+            sections.push({
+                title: currentSection,
+                content: currentContent.join(' ').trim(),
+                isHighlighted: ['Recommendation', 'Rationale'].includes(currentSection),
+                isRecommendation: currentSection.toLowerCase().includes('recommendation'),
+                isTimestamps: currentSection.toLowerCase().includes('timestamp')
+            });
+        }
+    }
+    
+    // Final fallback: split by paragraphs but try to detect natural breaks
+    if (sections.length === 0) {
+        const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 20); // Only substantial paragraphs
+        
         paragraphs.forEach((paragraph, index) => {
-            if (paragraph.trim().length > 0) {
+            const trimmed = paragraph.trim();
+            if (trimmed) {
+                // Try to extract a meaningful title from first sentence
+                const firstSentence = trimmed.split(/[.!?]/)[0];
+                let title = `Section ${index + 1}`;
+                
+                // If first sentence is short and descriptive, use it as title
+                if (firstSentence.length < 50 && firstSentence.length > 10) {
+                    title = firstSentence.replace(/^\*\*|\*\*$/g, '').trim();
+                }
+                
                 sections.push({
-                    title: `Section ${index + 1}`,
-                    content: paragraph.trim(),
-                    isHighlighted: false
+                    title: title,
+                    content: trimmed,
+                    isHighlighted: trimmed.toLowerCase().includes('recommend') || trimmed.toLowerCase().includes('rationale'),
+                    isRecommendation: trimmed.toLowerCase().includes('recommend'),
+                    isTimestamps: trimmed.toLowerCase().includes('timestamp')
                 });
             }
         });
@@ -281,22 +505,77 @@ function parseAnalysisSections(text) {
 
 function formatSectionedAnalysis(sections, videoUrl) {
     return sections.map(section => {
-        const sectionClass = section.isHighlighted ? 'analysis-section highlighted' : 'analysis-section';
+        // Enhanced section classification
+        let sectionClass = 'analysis-section';
+        if (section.isRecommendation) {
+            sectionClass += ' recommendation';
+        } else if (section.isTimestamps) {
+            sectionClass += ' timestamps';
+        } else if (section.isHighlighted) {
+            sectionClass += ' highlighted';
+        }
+        
         let formattedContent = section.content
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/\n/g, '<br>')
-            // Enhanced timestamp patterns: (0:56), (0:56-1:14), (1:23:45), etc.
-            .replace(/\((\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?)\)/g, (match, timeRange) => {
-                // Extract start time from range like "0:56-1:14" -> "0:56"
-                const startTime = timeRange.split('-')[0];
-                const timestampUrl = createTimestampUrl(videoUrl, startTime);
-                return `<a href="${timestampUrl}" target="_blank" class="timestamp-link">${match}</a>`;
-            });
+            .replace(/\n/g, '<br>');
+            
+        // Enhanced timestamp processing for clickable links
+        if (section.isTimestamps || section.title.toLowerCase().includes('timestamp')) {
+            // More aggressive timestamp matching for timestamp sections
+            formattedContent = formattedContent.replace(
+                /(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, 
+                (match, timeRange) => {
+                    // Skip if this is part of a URL or already processed
+                    if (match.includes('http') || match.includes('www')) return match;
+                    
+                    // Extract start time from range like "(0:56-1:14)" -> "0:56"
+                    const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
+                    
+                    // Validate timestamp format
+                    if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) return match;
+                    
+                    if (videoUrl) {
+                        const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
+                        return `<a href="${timestampUrl}" target="_blank" class="timestamp-link" title="Jump to ${cleanTime} in video">${match}</a>`;
+                    }
+                    return `<span class="timestamp-display">${match}</span>`;
+                }
+            );
+        } else {
+            // Standard timestamp processing for other sections
+            formattedContent = formattedContent.replace(
+                /(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, 
+                (match, timeRange) => {
+                    if (match.includes('http') || match.includes('www')) return match;
+                    const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
+                    if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) return match;
+                    
+                    if (videoUrl) {
+                        const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
+                        return `<a href="${timestampUrl}" target="_blank" class="timestamp-link" title="Jump to ${cleanTime} in video">${match}</a>`;
+                    }
+                    return `<span class="timestamp-display">${match}</span>`;
+                }
+            );
+        }
+        
+        // Add section icon based on type
+        let sectionIcon = '▸';
+        if (section.isRecommendation) {
+            sectionIcon = '💡';
+        } else if (section.isTimestamps) {
+            sectionIcon = '⏰';
+        } else if (section.title.toLowerCase().includes('summary')) {
+            sectionIcon = '📋';
+        }
         
         return `
             <div class="${sectionClass}">
-                <h4 class="section-title">${section.title}:</h4>
+                <h4 class="section-title">
+                    <span class="section-icon">${sectionIcon}</span>
+                    ${section.title}${section.title.endsWith(':') ? '' : ':'}
+                </h4>
                 <div class="section-content">${formattedContent}</div>
             </div>
         `;
@@ -559,38 +838,148 @@ function refreshAnalyses() {
     text-decoration: none;
 }
 
-/* Analysis Section Styling */
+/* Enhanced Analysis Section Styling */
 .analysis-section {
-    margin-bottom: 2rem;
+    margin: 1.2rem 0;
     padding: 1.25rem;
+    border-left: 4px solid #e0e0e0;
+    background: #fafafa;
     border-radius: 8px;
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.analysis-section.highlighted {
-    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-    border-left: 4px solid #ffc107;
+/* Recommendation sections - highest priority */
+.analysis-section.recommendation {
+    border-left-color: #e74c3c;
+    background: linear-gradient(135deg, #fdf2f2 0%, #fafafa 100%);
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.15);
+    position: relative;
 }
 
-.section-title {
-    color: #333;
+.analysis-section.recommendation::before {
+    content: '💡';
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1.2rem;
+    opacity: 0.8;
+}
+
+/* Timestamp sections - special treatment */
+.analysis-section.timestamps {
+    border-left-color: #3498db;
+    background: linear-gradient(135deg, #f0f8ff 0%, #fafafa 100%);
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.15);
+    position: relative;
+}
+
+.analysis-section.timestamps::before {
+    content: '⏰';
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
     font-size: 1.1rem;
-    font-weight: 600;
-    margin: 0 0 0.5rem 0;
+    opacity: 0.7;
+}
+
+/* Other highlighted sections */
+.analysis-section.highlighted {
+    border-left-color: #f39c12;
+    background: linear-gradient(135deg, #fff9f0 0%, #fafafa 100%);
+    box-shadow: 0 2px 8px rgba(243, 156, 18, 0.15);
+    position: relative;
+}
+
+.analysis-section.highlighted::before {
+    content: '⭐';
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1.1rem;
+    opacity: 0.7;
+}
+
+/* Section titles with enhanced styling */
+.section-title {
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 0.75rem;
+    font-size: 1.15rem;
+    letter-spacing: 0.025em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.section-icon {
+    font-size: 1.1rem;
+    margin-right: 0.25rem;
+}
+
+/* Remove the old ::before pseudo-element */
+.section-title::before {
+    display: none;
+}
+
+/* Color variations for different section types */
+.analysis-section.recommendation .section-title {
+    color: #c0392b;
+}
+
+.analysis-section.timestamps .section-title {
+    color: #2980b9;
 }
 
 .analysis-section.highlighted .section-title {
-    color: #856404;
+    color: #d68910;
 }
 
 .section-content {
-    line-height: 1.6;
-    color: #555;
+    color: #444;
+    line-height: 1.65;
+    font-size: 0.96rem;
+    text-align: justify;
 }
 
-.analysis-section.highlighted .section-content {
-    color: #664d03;
+/* Enhanced timestamp link styling */
+.timestamp-link {
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white !important;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: inline-block;
+    margin: 0 2px;
+    box-shadow: 0 1px 3px rgba(52, 152, 219, 0.3);
+}
+
+.timestamp-link:hover {
+    background: linear-gradient(135deg, #2980b9 0%, #1f618d 100%);
+    color: white !important;
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(52, 152, 219, 0.4);
+}
+
+.timestamp-link:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(52, 152, 219, 0.3);
+}
+
+/* Special styling for timestamp sections */
+.analysis-section.timestamps .timestamp-link {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    box-shadow: 0 1px 3px rgba(231, 76, 60, 0.3);
+}
+
+.analysis-section.timestamps .timestamp-link:hover {
+    background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+    box-shadow: 0 2px 6px rgba(231, 76, 60, 0.4);
 }
 
 /* Pagination Controls */

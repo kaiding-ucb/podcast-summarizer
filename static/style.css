@@ -353,3 +353,55 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* Dashboard Analysis Section Styling */
+.analysis-section {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    border-left: 3px solid #e0e0e0;
+    background: #fafafa;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.analysis-section:first-child {
+    margin-top: 0.5rem;
+}
+
+.analysis-section.highlighted {
+    border-left-color: #4CAF50;
+    background: linear-gradient(to right, #f1f8e9, #fafafa);
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.1);
+}
+
+.section-title {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+}
+
+.section-content {
+    color: #555;
+    line-height: 1.6;
+    font-size: 0.95rem;
+}
+
+/* Timestamp Links Styling */
+.timestamp-link {
+    color: #1976d2;
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px dotted #1976d2;
+    padding-bottom: 1px;
+    transition: all 0.2s ease;
+}
+
+.timestamp-link:hover {
+    color: #0d47a1;
+    border-bottom-style: solid;
+    background-color: rgba(25, 118, 210, 0.05);
+    border-radius: 3px;
+    padding: 0 3px;
+}
