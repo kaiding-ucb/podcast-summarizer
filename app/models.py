@@ -38,6 +38,9 @@ class DiscoveryResponse(BaseModel):
 class BatchAnalysisRequest(BaseModel):
     days_back: Optional[int] = 7
 
+class BatchAnalyzeSelectedRequest(BaseModel):
+    video_urls: List[str]
+
 class BatchAnalysisResponse(BaseModel):
     batch_id: str
     started_at: str
