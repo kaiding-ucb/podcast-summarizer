@@ -1,6 +1,7 @@
 from googleapiclient.discovery import build
 import yaml
 import re
+import logging
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 
@@ -47,24 +48,30 @@ class YouTubeService:
                 snippet = video['snippet']
                 content_details = video['contentDetails']
                 
-                # Parse duration (PT4M13S -> 253 seconds)
-                duration_str = content_details['duration']
+                # Parse duration with defensive handling for live streams
+                duration_str = content_details.get('duration', 'PT0S')
                 duration_seconds = self._parse_duration(duration_str)
+                
+                # Handle missing fields gracefully
+                title = snippet.get('title', 'Unknown Title')
+                channel_name = snippet.get('channelTitle', 'Unknown Channel')
+                published_at = snippet.get('publishedAt', datetime.now().isoformat())
                 
                 return {
                     'video_id': video_id,
-                    'title': snippet['title'],
-                    'channel_name': snippet['channelTitle'],
+                    'title': title,
+                    'channel_name': channel_name,
                     'duration': duration_seconds,
-                    'published_at': snippet['publishedAt'],
+                    'published_at': published_at,
                     'url': video_url,
                     'excluded_from_analysis': self.should_exclude_from_analysis(duration_seconds)
                 }
-            
-            return None
+            else:
+                logging.warning(f"No video data found for ID: {video_id}")
+                return None
             
         except Exception as e:
-            print(f"Error getting video info: {e}")
+            logging.error(f"Error getting video info for {video_url}: {e}")
             return None
 
     def get_channel_videos(self, channel_id: str, max_results: int = 5) -> List[Dict[str, Any]]:
@@ -101,7 +108,7 @@ class YouTubeService:
             return videos
             
         except Exception as e:
-            print(f"Error getting channel videos: {e}")
+            logging.error(f"Error getting channel videos: {e}")
             return []
 
     def discover_new_videos(self, channels: List[Dict[str, str]], max_per_channel: int = 5) -> List[Dict[str, Any]]:
@@ -158,7 +165,7 @@ class YouTubeService:
                         all_videos.append(video_info)
                 
             except Exception as e:
-                print(f"Error getting recent videos for channel {channel_name}: {e}")
+                logging.error(f"Error getting recent videos for channel {channel_name}: {e}")
                 continue
         
         # Sort by published date (newest first)
@@ -167,9 +174,18 @@ class YouTubeService:
         return all_videos
 
     def _parse_duration(self, duration_str: str) -> int:
-        """Parse YouTube duration format (PT4M13S) to seconds"""
+        """Parse YouTube duration format (PT4M13S) to seconds, handle live streams"""
         import re
         
+        # Handle empty or None duration
+        if not duration_str:
+            return 0
+            
+        # Handle live stream formats: P0D, PT0S, or similar
+        if duration_str in ['P0D', 'PT0S'] or duration_str.startswith('P0D'):
+            return 0  # Live streams or very short content
+            
+        # Standard duration pattern
         pattern = re.compile(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?')
         match = pattern.match(duration_str)
         
@@ -180,4 +196,6 @@ class YouTubeService:
             
             return hours * 3600 + minutes * 60 + seconds
         
+        # If no pattern matches, log and return 0
+        logging.warning(f"Could not parse duration: {duration_str}")
         return 0
