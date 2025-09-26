@@ -182,7 +182,9 @@ class DatabaseService:
                 cursor = conn.execute("""
                     SELECT * FROM video_analyses 
                     WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')
-                    ORDER BY created_at DESC
+                    ORDER BY 
+                        CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                        published_at DESC
                 """, (days,))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
