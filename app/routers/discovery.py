@@ -6,6 +6,7 @@ from services.batch_analyzer import BatchAnalyzer, get_batch_progress
 import yaml
 import asyncio
 from datetime import datetime
+from googleapiclient.errors import HttpError
 
 router = APIRouter(prefix="/api", tags=["discovery"])
 
@@ -46,6 +47,11 @@ async def discover_new_videos(days_back: int = None):
             total_count=len(video_infos)
         )
         
+    except HttpError as e:
+        if "quotaExceeded" in str(e):
+            raise HTTPException(status_code=429, detail="YouTube API quota exceeded. Please wait 24 hours before discovering new videos.")
+        else:
+            raise HTTPException(status_code=500, detail=f"YouTube API error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Discovery failed: {str(e)}")
 

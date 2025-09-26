@@ -166,6 +166,9 @@ class YouTubeService:
                 
             except Exception as e:
                 logging.error(f"Error getting recent videos for channel {channel_name}: {e}")
+                # Check if this is a quota exceeded error and re-raise it
+                if "quotaExceeded" in str(e):
+                    raise e
                 continue
         
         # Sort by published date (newest first)

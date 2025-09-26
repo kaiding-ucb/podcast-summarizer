@@ -43,6 +43,14 @@
                 </label>
                 <span id="selectedCount" class="selected-count">0 selected</span>
             </div>
+            
+            <div class="channel-filter-container">
+                <label for="channelFilter">Filter by Channel:</label>
+                <select id="channelFilter" onchange="filterByChannel()">
+                    <option value="all">All Channels</option>
+                </select>
+            </div>
+            
             <button 
                 id="analyzeSelectedBtn"
                 class="btn btn-primary"
@@ -88,6 +96,18 @@ async function discoverVideos(days = DISCOVERY_DAYS_BACK) {
     
     try {
         const response = await fetch(`/api/discover?days_back=${days}`);
+        if (response.status === 429) {
+            const errorData = await response.json();
+            const grid = document.getElementById('video-grid');
+            grid.innerHTML = `
+                <div class="quota-error-state">
+                    <h3>⏳ YouTube API Quota Exceeded</h3>
+                    <p>${errorData.detail}</p>
+                    <p>The YouTube API has a daily limit. Please try again in 24 hours.</p>
+                </div>
+            `;
+            return;
+        }
         const data = await response.json();
         renderVideoGrid(data.videos);
     } catch (error) {
@@ -157,6 +177,9 @@ document.body.addEventListener('htmx:afterRequest', function(event) {
     }
 });
 
+// Store all videos globally for filtering
+let allVideos = [];
+
 function renderVideoGrid(videos) {
     const grid = document.getElementById('video-grid');
     if (!videos || videos.length === 0) {
@@ -164,6 +187,38 @@ function renderVideoGrid(videos) {
         return;
     }
 
+    // Store videos for filtering
+    allVideos = videos;
+    
+    // Populate channel filter
+    populateChannelFilter(videos);
+    
+    // Render videos
+    renderFilteredVideos(videos);
+}
+
+function populateChannelFilter(videos) {
+    const channelFilter = document.getElementById('channelFilter');
+    if (!channelFilter) return;
+    
+    // Get unique channels
+    const channels = [...new Set(videos.map(video => video.channel_name))].sort();
+    
+    // Clear existing options except "All Channels"
+    channelFilter.innerHTML = '<option value="all">All Channels</option>';
+    
+    // Add channel options
+    channels.forEach(channel => {
+        const option = document.createElement('option');
+        option.value = channel;
+        option.textContent = channel;
+        channelFilter.appendChild(option);
+    });
+}
+
+function renderFilteredVideos(videos) {
+    const grid = document.getElementById('video-grid');
+    
     const videosHTML = videos.map(video => {
         const analyzedClass = video.analyzed ? 'analyzed' : 'not-analyzed';
         
@@ -229,6 +284,21 @@ function renderVideoGrid(videos) {
     
     // Reset selection state
     updateSelectedCount();
+}
+
+// Channel filter functionality
+function filterByChannel() {
+    const channelFilter = document.getElementById('channelFilter');
+    const selectedChannel = channelFilter.value;
+    
+    let filteredVideos;
+    if (selectedChannel === 'all') {
+        filteredVideos = allVideos;
+    } else {
+        filteredVideos = allVideos.filter(video => video.channel_name === selectedChannel);
+    }
+    
+    renderFilteredVideos(filteredVideos);
 }
 
 function formatDuration(seconds) {
@@ -568,6 +638,32 @@ async function analyzeSelectedVideos() {
     font-size: 0.9rem;
 }
 
+.channel-filter-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.channel-filter-container label {
+    font-weight: bold;
+    color: #333;
+}
+
+.channel-filter-container select {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.channel-filter-container select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
 .video-select-checkbox {
     position: absolute;
     top: 8px;
@@ -583,6 +679,25 @@ async function analyzeSelectedVideos() {
 
 .video-card {
     position: relative;
+}
+
+.quota-error-state {
+    text-align: center;
+    padding: 3rem;
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 8px;
+    margin: 2rem 0;
+}
+
+.quota-error-state h3 {
+    color: #856404;
+    margin-bottom: 1rem;
+}
+
+.quota-error-state p {
+    color: #856404;
+    margin-bottom: 0.5rem;
 }
 </style>
 {% endblock %}
