@@ -200,14 +200,14 @@ async def get_all_analyses(channel_id: str = None, page: int = 1, page_size: int
         raise HTTPException(status_code=500, detail=f"Failed to get analyses: {str(e)}")
 
 @router.get("/analyses/recent", response_model=PaginatedAnalysesResponse)
-async def get_recent_analyses(days: int = 7, page: int = 1, page_size: int = 10):
-    """Get paginated recent analyses from the last N days"""
+async def get_recent_analyses(days: int = 7, channel_id: str = None, page: int = 1, page_size: int = 10):
+    """Get paginated recent analyses from the last N days, optionally filtered by channel"""
     try:
         db_service = DatabaseService()
         
         # For recent analyses, we'll get all recent ones first, then paginate
         # This is simpler than creating a separate paginated recent method
-        all_recent = db_service.get_recent_analyses(days=days)
+        all_recent = db_service.get_recent_analyses(days=days, channel_id=channel_id)
         
         # Validate pagination parameters
         page = max(1, page)
@@ -256,3 +256,61 @@ async def get_batch_analysis_progress(batch_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get batch progress: {str(e)}")
+
+@router.get("/channels")
+async def get_available_channels():
+    """Get all available channels from database and config"""
+    try:
+        db_service = DatabaseService()
+        
+        # Get channels from config
+        with open("config.yaml", 'r') as file:
+            config = yaml.safe_load(file)
+        config_channels = config.get('channels', [])
+        
+        # Get unique channels from database (both tables)
+        conn = db_service.get_connection()
+        conn.row_factory = lambda cursor, row: dict(zip([col[0] for col in cursor.description], row))
+        
+        # Get channels from video_analyses
+        cursor = conn.execute('''
+            SELECT DISTINCT channel_id, channel_name FROM video_analyses 
+            WHERE channel_id IS NOT NULL AND channel_name IS NOT NULL
+        ''')
+        db_channels = cursor.fetchall()
+        
+        # Get channels from discovered_videos
+        cursor = conn.execute('''
+            SELECT DISTINCT channel_id, channel_name FROM discovered_videos 
+            WHERE channel_id IS NOT NULL AND channel_name IS NOT NULL
+        ''')
+        discovered_channels = cursor.fetchall()
+        
+        conn.close()
+        
+        # Combine all channels and remove duplicates
+        all_channels = {}
+        
+        # Add config channels
+        for ch in config_channels:
+            all_channels[ch['channel_id']] = {
+                'channel_id': ch['channel_id'],
+                'name': ch['name']
+            }
+        
+        # Add database channels
+        for ch in db_channels + discovered_channels:
+            if ch['channel_id'] not in all_channels:
+                all_channels[ch['channel_id']] = {
+                    'channel_id': ch['channel_id'],
+                    'name': ch['channel_name']
+                }
+        
+        # Convert to list and sort by name
+        channels_list = list(all_channels.values())
+        channels_list.sort(key=lambda x: x['name'])
+        
+        return {"channels": channels_list}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get channels: {str(e)}")
