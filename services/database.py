@@ -44,7 +44,8 @@ class DatabaseService:
                     published_at TEXT,
                     discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     analyzed BOOLEAN DEFAULT FALSE,
-                    excluded_from_analysis BOOLEAN DEFAULT FALSE
+                    excluded_from_analysis BOOLEAN DEFAULT FALSE,
+                    in_progress BOOLEAN DEFAULT FALSE
                 )
             """)
             
@@ -276,3 +277,52 @@ class DatabaseService:
                 'has_next': False,
                 'has_prev': False
             }
+    
+    def get_connection(self):
+        """Get database connection for testing purposes"""
+        return sqlite3.connect(self.db_path)
+    
+    def mark_video_in_progress(self, video_id: str) -> bool:
+        """Mark a video as currently being analyzed"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE discovered_videos 
+                    SET in_progress = 1 
+                    WHERE video_id = ?
+                """, (video_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error marking video as in_progress: {e}")
+            return False
+    
+    def clear_video_in_progress(self, video_id: str) -> bool:
+        """Clear the in_progress status for a video"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE discovered_videos 
+                    SET in_progress = 0 
+                    WHERE video_id = ?
+                """, (video_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error clearing in_progress status: {e}")
+            return False
+    
+    def get_discovered_video(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific discovered video by video_id"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("""
+                    SELECT * FROM discovered_videos 
+                    WHERE video_id = ?
+                """, (video_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            print(f"Error retrieving discovered video: {e}")
+            return None

@@ -2,7 +2,7 @@ from google import genai
 from google.genai import types
 import yaml
 import re
-from pytube import YouTube
+from services.youtube_service import YouTubeService
 
 class GeminiAnalyzer:
     def __init__(self, config_path: str = "config.yaml"):
@@ -11,12 +11,17 @@ class GeminiAnalyzer:
         
         self.api_key = config['gemini_api_key']
         self.client = genai.Client(api_key=self.api_key)
+        self.youtube_service = YouTubeService(config_path)
 
     def get_video_duration(self, youtube_url: str) -> int:
-        """Get video duration in seconds for timestamp validation"""
+        """Get video duration in seconds for timestamp validation using YouTube Data API"""
         try:
-            yt = YouTube(youtube_url)
-            return yt.length
+            video_info = self.youtube_service.get_video_info(youtube_url)
+            if video_info and 'duration' in video_info:
+                return video_info['duration']
+            else:
+                print(f"No video info found for URL: {youtube_url}")
+                return 0
         except Exception as e:
             print(f"Error getting video duration: {e}")
             return 0
@@ -32,11 +37,15 @@ class GeminiAnalyzer:
                 return False
         return True
 
-    def analyze_video(self, youtube_url: str) -> dict:
+    def analyze_video(self, youtube_url: str, video_duration: int = None) -> dict:
         """Analyze YouTube video using Gemini with the exact prompt from CLAUDE.md"""
         
-        # Get video duration for validation
-        video_duration = self.get_video_duration(youtube_url)
+        # Get video duration for validation (use provided duration or fetch from API)
+        if video_duration is None:
+            video_duration = self.get_video_duration(youtube_url)
+        else:
+            # Use the provided duration to avoid double API call
+            pass
         
         # Exact prompt from CLAUDE.md
         prompt = """You're a podcast analyzer who summarize Youtube videos and distills potential invesmtment recommendations.
