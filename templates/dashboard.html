@@ -332,14 +332,32 @@ function formatAnalysisText(text, videoUrl) {
     }
     
     // Fallback to original formatting if no sections found
-    return text
+    let formattedText = text
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/\n/g, '<br>')
-        // Enhanced timestamp patterns: (0:56), (0:56-1:14), (1:23:45), 0:56, etc.
-        .replace(/(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, (match, timeRange) => {
+        .replace(/\n/g, '<br>');
+    
+    // First, handle existing <span class="timestamp"> tags and convert them to clickable links
+    formattedText = formattedText.replace(
+        /<span class="timestamp">(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)<\/span>/g,
+        (match, timeRange) => {
+            const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
+            if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) return match;
+            
+            if (videoUrl) {
+                const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
+                return `<a href="${timestampUrl}" target="_blank" class="timestamp-link" title="Jump to ${cleanTime} in video">${timeRange}</a>`;
+            }
+            return `<span class="timestamp-display">${timeRange}</span>`;
+        }
+    );
+    
+    // Then handle any remaining raw timestamp patterns
+    formattedText = formattedText.replace(
+        /(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, 
+        (match, timeRange) => {
             // Skip if this is part of a URL or already processed
-            if (match.includes('http') || match.includes('www')) return match;
+            if (match.includes('http') || match.includes('www') || match.includes('<')) return match;
             
             // Extract start time from range like "(0:56-1:14)" -> "0:56"
             const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
@@ -349,10 +367,13 @@ function formatAnalysisText(text, videoUrl) {
             
             if (videoUrl) {
                 const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
-                return `<a href="${timestampUrl}" target="_blank" class="timestamp-link">${match}</a>`;
+                return `<a href="${timestampUrl}" target="_blank" class="timestamp-link" title="Jump to ${cleanTime} in video">${match}</a>`;
             }
             return `<span class="timestamp-display">${match}</span>`;
-        });
+        }
+    );
+    
+    return formattedText;
 }
 
 function parseAnalysisSections(text) {
@@ -366,10 +387,13 @@ function parseAnalysisSections(text) {
         // Pattern 2: Bullet points with bold headers: * **Summary:** content
         /(?:^|\n)\s*\*\s+\*\*(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis|Who owns the media\?|Stock|Sector|Portfolio strategy|Concentrated Portfolios|Own Gold):\*\*\s*([\s\S]*?)(?=\n\s*\*\s+\*\*|\n\s*$|$)/g,
         
-        // Pattern 3: Direct bold headers: **Summary:** content
-        /\*\*(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis|Stock|Sector|Portfolio strategy|Concentrated Portfolios|Own Gold):\*\*\s*([\s\S]*?)(?=\*\*[A-Z]|$)/g,
+        // Pattern 3: Direct bold headers: **Summary:** content (including bullet points)
+        /\*\*(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis|Stock|Sector|Portfolio strategy|Concentrated Portfolios|Own Gold):\*\*\s*([\s\S]*?)(?=\*\*[A-Z]|\*\*Summary|\*\*Recommendation|\*\*Timestamps|$)/g,
         
-        // Pattern 4: Plain section headers without bold: Summary: content
+        // Pattern 4: Simple format like the current example where sections are separated by * but without explicit headers
+        /(?:^|\n)\s*\*\s+\*\*(Summary|Timestamps?):\*\*\s*([\s\S]*?)(?=\n\s*\*\s+\*\*|$)/g,
+        
+        // Pattern 5: Plain section headers without bold: Summary: content
         /(?:^|\n)\s*(Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis):\s*([\s\S]*?)(?=\n\s*(?:Summary|Recommendation|Rationale|Key Points?|Timestamps?|Analysis Points?|Market Impact Analysis):|$)/g
     ];
     
@@ -381,7 +405,7 @@ function parseAnalysisSections(text) {
                     // Special case for "Recommendation: Other" **Topic** format
                     const [, category, type, topic] = match;
                     sections.push({
-                        title: `${category}: ${type}`,
+                        title: `${category}: ${type} ${topic}`,
                         content: topic.trim(),
                         isHighlighted: true,
                         isRecommendation: true
@@ -504,7 +528,7 @@ function parseAnalysisSections(text) {
 }
 
 function formatSectionedAnalysis(sections, videoUrl) {
-    return sections.map(section => {
+    return sections.map((section, index) => {
         // Enhanced section classification
         let sectionClass = 'analysis-section';
         if (section.isRecommendation) {
@@ -515,50 +539,37 @@ function formatSectionedAnalysis(sections, videoUrl) {
             sectionClass += ' highlighted';
         }
         
+        // Add spacing class for better visual separation
+        if (index > 0) {
+            sectionClass += ' section-spaced';
+        }
+        
         let formattedContent = section.content
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             .replace(/\n/g, '<br>');
             
         // Enhanced timestamp processing for clickable links
-        if (section.isTimestamps || section.title.toLowerCase().includes('timestamp')) {
-            // More aggressive timestamp matching for timestamp sections
-            formattedContent = formattedContent.replace(
-                /(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, 
-                (match, timeRange) => {
-                    // Skip if this is part of a URL or already processed
-                    if (match.includes('http') || match.includes('www')) return match;
-                    
-                    // Extract start time from range like "(0:56-1:14)" -> "0:56"
-                    const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
-                    
-                    // Validate timestamp format
-                    if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) return match;
-                    
-                    if (videoUrl) {
-                        const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
-                        return `<a href="${timestampUrl}" target="_blank" class="timestamp-link" title="Jump to ${cleanTime} in video">${match}</a>`;
-                    }
-                    return `<span class="timestamp-display">${match}</span>`;
+        // Use consistent timestamp matching for all sections
+        formattedContent = formattedContent.replace(
+            /(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, 
+            (match, timeRange) => {
+                // Skip if this is part of a URL or already processed
+                if (match.includes('http') || match.includes('www') || match.includes('<a')) return match;
+                
+                // Extract start time from range like "(0:56-1:14)" -> "0:56"
+                const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
+                
+                // Validate timestamp format
+                if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) return match;
+                
+                if (videoUrl) {
+                    const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
+                    return `<a href="${timestampUrl}" target="_blank" class="timestamp-link" title="Jump to ${cleanTime} in video">${match}</a>`;
                 }
-            );
-        } else {
-            // Standard timestamp processing for other sections
-            formattedContent = formattedContent.replace(
-                /(\(?\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?\)?)/g, 
-                (match, timeRange) => {
-                    if (match.includes('http') || match.includes('www')) return match;
-                    const cleanTime = timeRange.replace(/[()]/g, '').split('-')[0];
-                    if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(cleanTime)) return match;
-                    
-                    if (videoUrl) {
-                        const timestampUrl = createTimestampUrl(videoUrl, cleanTime);
-                        return `<a href="${timestampUrl}" target="_blank" class="timestamp-link" title="Jump to ${cleanTime} in video">${match}</a>`;
-                    }
-                    return `<span class="timestamp-display">${match}</span>`;
-                }
-            );
-        }
+                return `<span class="timestamp-display">${match}</span>`;
+            }
+        );
         
         // Add section icon based on type
         let sectionIcon = '▸';
@@ -847,6 +858,11 @@ function refreshAnalyses() {
     border-radius: 8px;
     transition: all 0.3s ease;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Enhanced spacing between sections for better readability */
+.analysis-section.section-spaced {
+    margin-top: 2rem;
 }
 
 /* Recommendation sections - highest priority */
