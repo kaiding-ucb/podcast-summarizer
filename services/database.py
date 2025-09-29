@@ -180,14 +180,39 @@ class DatabaseService:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 if channel_id:
-                    cursor = conn.execute("""
-                        SELECT * FROM video_analyses 
-                        WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')
-                        AND channel_id = ?
-                        ORDER BY 
-                            CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
-                            published_at DESC
-                    """, (days, channel_id))
+                    # Load config to map channel_id to potential channel names
+                    import yaml
+                    with open("config.yaml", 'r') as file:
+                        config = yaml.safe_load(file)
+                    
+                    # Find the channel name for this channel_id
+                    channel_name = None
+                    for ch in config.get('channels', []):
+                        if ch['channel_id'] == channel_id:
+                            channel_name = ch['name']
+                            break
+                    
+                    if channel_name:
+                        # Use exact matching to prevent cross-channel results
+                        # Primary match on channel_id, fallback to exact channel_name match
+                        cursor = conn.execute("""
+                            SELECT * FROM video_analyses 
+                            WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')
+                            AND (channel_id = ? OR channel_name = ?)
+                            ORDER BY 
+                                CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                                published_at DESC
+                        """, (days, channel_id, channel_name))
+                    else:
+                        # Fallback to just channel_id
+                        cursor = conn.execute("""
+                            SELECT * FROM video_analyses 
+                            WHERE datetime(created_at) >= datetime('now', '-' || ? || ' days')
+                            AND channel_id = ?
+                            ORDER BY 
+                                CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                                published_at DESC
+                        """, (days, channel_id))
                 else:
                     cursor = conn.execute("""
                         SELECT * FROM video_analyses 
@@ -233,21 +258,52 @@ class DatabaseService:
                 
                 # Get total count
                 if channel_id:
-                    count_cursor = conn.execute("""
-                        SELECT COUNT(*) as total FROM video_analyses 
-                        WHERE channel_id = ?
-                    """, (channel_id,))
-                    total_count = count_cursor.fetchone()['total']
+                    # Load config to map channel_id to potential channel names
+                    import yaml
+                    with open("config.yaml", 'r') as file:
+                        config = yaml.safe_load(file)
                     
-                    # Get paginated results
-                    cursor = conn.execute("""
-                        SELECT * FROM video_analyses 
-                        WHERE channel_id = ?
-                        ORDER BY 
-                            CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
-                            published_at DESC
-                        LIMIT ? OFFSET ?
-                    """, (channel_id, page_size, offset))
+                    # Find the channel name for this channel_id
+                    channel_name = None
+                    for ch in config.get('channels', []):
+                        if ch['channel_id'] == channel_id:
+                            channel_name = ch['name']
+                            break
+                    
+                    if channel_name:
+                        # Use exact matching to prevent cross-channel results
+                        # Primary match on channel_id, fallback to exact channel_name match
+                        count_cursor = conn.execute("""
+                            SELECT COUNT(*) as total FROM video_analyses 
+                            WHERE (channel_id = ? OR channel_name = ?)
+                        """, (channel_id, channel_name))
+                        total_count = count_cursor.fetchone()['total']
+                        
+                        # Get paginated results
+                        cursor = conn.execute("""
+                            SELECT * FROM video_analyses 
+                            WHERE (channel_id = ? OR channel_name = ?)
+                            ORDER BY 
+                                CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                                published_at DESC
+                            LIMIT ? OFFSET ?
+                        """, (channel_id, channel_name, page_size, offset))
+                    else:
+                        count_cursor = conn.execute("""
+                            SELECT COUNT(*) as total FROM video_analyses 
+                            WHERE channel_id = ?
+                        """, (channel_id,))
+                        total_count = count_cursor.fetchone()['total']
+                        
+                        # Get paginated results
+                        cursor = conn.execute("""
+                            SELECT * FROM video_analyses 
+                            WHERE channel_id = ?
+                            ORDER BY 
+                                CASE WHEN published_at IS NULL OR published_at = '' THEN 1 ELSE 0 END,
+                                published_at DESC
+                            LIMIT ? OFFSET ?
+                        """, (channel_id, page_size, offset))
                 else:
                     count_cursor = conn.execute("SELECT COUNT(*) as total FROM video_analyses")
                     total_count = count_cursor.fetchone()['total']
