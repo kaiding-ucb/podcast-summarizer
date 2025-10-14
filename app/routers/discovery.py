@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from app.models import DiscoveryResponse, VideoInfo, BatchAnalysisRequest, BatchAnalysisResponse, AnalysesResponse, VideoAnalysisResponse, PaginatedAnalysesResponse, BatchAnalyzeSelectedRequest
+from app.models import DiscoveryResponse, VideoInfo, BatchAnalysisRequest, BatchAnalysisResponse, AnalysesResponse, VideoAnalysisResponse, PaginatedAnalysesResponse, BatchAnalyzeSelectedRequest, ReAnalysisRequest, ReAnalyzeFailedResponse
 from services.youtube_service import YouTubeService
 from services.database import DatabaseService
 from services.batch_analyzer import BatchAnalyzer, get_batch_progress
+from services.gemini_analyzer import GeminiAnalyzer
 import yaml
 import asyncio
 from datetime import datetime
@@ -268,55 +269,168 @@ async def get_available_channels():
     """Get all available channels from database and config"""
     try:
         db_service = DatabaseService()
-        
+
         # Get channels from config
         with open("config.yaml", 'r') as file:
             config = yaml.safe_load(file)
         config_channels = config.get('channels', [])
-        
-        # Get unique channels from database (both tables)
-        conn = db_service.get_connection()
-        conn.row_factory = lambda cursor, row: dict(zip([col[0] for col in cursor.description], row))
-        
-        # Get channels from video_analyses
-        cursor = conn.execute('''
-            SELECT DISTINCT channel_id, channel_name FROM video_analyses 
-            WHERE channel_id IS NOT NULL AND channel_name IS NOT NULL
-        ''')
-        db_channels = cursor.fetchall()
-        
-        # Get channels from discovered_videos
-        cursor = conn.execute('''
-            SELECT DISTINCT channel_id, channel_name FROM discovered_videos 
-            WHERE channel_id IS NOT NULL AND channel_name IS NOT NULL
-        ''')
-        discovered_channels = cursor.fetchall()
-        
-        conn.close()
-        
-        # Combine all channels and remove duplicates
-        all_channels = {}
-        
-        # Add config channels
+
+        # Only return channels from config.yaml
+        channels_list = []
         for ch in config_channels:
-            all_channels[ch['channel_id']] = {
+            channels_list.append({
                 'channel_id': ch['channel_id'],
                 'name': ch['name']
-            }
-        
-        # Add database channels
-        for ch in db_channels + discovered_channels:
-            if ch['channel_id'] not in all_channels:
-                all_channels[ch['channel_id']] = {
-                    'channel_id': ch['channel_id'],
-                    'name': ch['channel_name']
-                }
-        
-        # Convert to list and sort by name
-        channels_list = list(all_channels.values())
+            })
+
+        # Sort by name
         channels_list.sort(key=lambda x: x['name'])
-        
+
         return {"channels": channels_list}
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get channels: {str(e)}")
+
+@router.post("/re-analyze/{video_id}", response_model=VideoAnalysisResponse)
+async def re_analyze_video(video_id: str):
+    """Re-analyze a single video by video_id"""
+    try:
+        db_service = DatabaseService()
+        youtube_service = YouTubeService()
+        analyzer = GeminiAnalyzer()
+
+        # Get existing analysis
+        existing_analysis = db_service.get_analysis(video_id)
+        if not existing_analysis:
+            raise HTTPException(status_code=404, detail=f"No analysis found for video_id: {video_id}")
+
+        video_url = existing_analysis['video_url']
+
+        # Get video info
+        video_info = youtube_service.get_video_info(video_url)
+        if not video_info:
+            raise HTTPException(status_code=400, detail="Could not retrieve video information")
+
+        # Perform re-analysis with retry logic
+        analysis_result = analyzer.analyze_video(video_url, video_duration=video_info.get('duration'))
+
+        # Prepare data for storage
+        analysis_data = {
+            'video_id': video_id,
+            'video_url': video_url,
+            'title': video_info['title'],
+            'analysis': analysis_result.get('analysis', ''),
+            'channel_id': video_info.get('channel_id'),
+            'channel_name': video_info.get('channel_name'),
+            'published_at': video_info.get('published_at'),
+            'video_duration': analysis_result.get('video_duration', video_info.get('duration', 0)),
+            'timestamps_valid': analysis_result.get('timestamps_valid', False),
+            'vaneck_excluded': analysis_result.get('vaneck_excluded', False),
+            'success': analysis_result.get('success', False),
+            'error': analysis_result.get('error'),
+            'created_at': datetime.now()
+        }
+
+        # Update database
+        db_service.save_analysis(analysis_data)
+        db_service.mark_video_analyzed(video_id)
+
+        return VideoAnalysisResponse(**analysis_data)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Re-analysis failed: {str(e)}")
+
+@router.post("/re-analyze-failed", response_model=ReAnalyzeFailedResponse)
+async def re_analyze_failed_videos():
+    """Re-analyze all videos with success=0"""
+    try:
+        db_service = DatabaseService()
+        youtube_service = YouTubeService()
+        analyzer = GeminiAnalyzer()
+
+        # Get all failed analyses
+        all_analyses = db_service.get_all_analyses()
+        failed_analyses = [a for a in all_analyses if not a.get('success', True)]
+
+        total_failed = len(failed_analyses)
+        results = []
+        re_analyzed = 0
+        still_failed = 0
+
+        for analysis in failed_analyses:
+            video_id = analysis['video_id']
+            video_url = analysis['video_url']
+
+            try:
+                # Get fresh video info
+                video_info = youtube_service.get_video_info(video_url)
+                if not video_info:
+                    results.append({
+                        'video_id': video_id,
+                        'title': analysis['title'],
+                        'status': 'failed',
+                        'error': 'Could not retrieve video info'
+                    })
+                    still_failed += 1
+                    continue
+
+                # Perform re-analysis with retry logic
+                analysis_result = analyzer.analyze_video(video_url, video_duration=video_info.get('duration'))
+
+                # Prepare data for storage
+                analysis_data = {
+                    'video_id': video_id,
+                    'video_url': video_url,
+                    'title': video_info['title'],
+                    'analysis': analysis_result.get('analysis', ''),
+                    'channel_id': video_info.get('channel_id'),
+                    'channel_name': video_info.get('channel_name'),
+                    'published_at': video_info.get('published_at'),
+                    'video_duration': analysis_result.get('video_duration', video_info.get('duration', 0)),
+                    'timestamps_valid': analysis_result.get('timestamps_valid', False),
+                    'vaneck_excluded': analysis_result.get('vaneck_excluded', False),
+                    'success': analysis_result.get('success', False),
+                    'error': analysis_result.get('error'),
+                    'created_at': datetime.now()
+                }
+
+                # Update database
+                db_service.save_analysis(analysis_data)
+                db_service.mark_video_analyzed(video_id)
+
+                if analysis_result.get('success'):
+                    re_analyzed += 1
+                    results.append({
+                        'video_id': video_id,
+                        'title': video_info['title'],
+                        'status': 'success'
+                    })
+                else:
+                    still_failed += 1
+                    results.append({
+                        'video_id': video_id,
+                        'title': video_info['title'],
+                        'status': 'failed',
+                        'error': analysis_result.get('error', 'Unknown error')
+                    })
+
+            except Exception as e:
+                still_failed += 1
+                results.append({
+                    'video_id': video_id,
+                    'title': analysis.get('title', 'Unknown'),
+                    'status': 'failed',
+                    'error': str(e)
+                })
+
+        return ReAnalyzeFailedResponse(
+            total_failed=total_failed,
+            re_analyzed=re_analyzed,
+            still_failed=still_failed,
+            results=results
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk re-analysis failed: {str(e)}")

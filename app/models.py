@@ -62,3 +62,12 @@ class PaginatedAnalysesResponse(BaseModel):
     total_pages: int
     has_next: bool
     has_prev: bool
+
+class ReAnalysisRequest(BaseModel):
+    video_id: str
+
+class ReAnalyzeFailedResponse(BaseModel):
+    total_failed: int
+    re_analyzed: int
+    still_failed: int
+    results: List[dict]
